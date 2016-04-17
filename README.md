@@ -1,2 +1,2 @@
 # logback-hocon
-Logback HOCON
+Logback HOCON configuration support. Work in progress.
