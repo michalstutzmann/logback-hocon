@@ -25,8 +25,8 @@ lazy val root = (project in file(".")).
       <url>http://github.com/mwegrz/logback-hocon</url>
         <licenses>
           <license>
-            <name>BSD-style</name>
-            <url>http://www.opensource.org/licenses/bsd-license.php</url>
+            <name>MIT</name>
+            <url>https://opensource.org/licenses/MIT</url>
             <distribution>repo</distribution>
           </license>
         </licenses>
