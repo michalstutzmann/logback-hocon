@@ -1,12 +1,18 @@
+val ScalaVersion = "2.12.0"
+val Slf4jVersion = "1.7.21"
+val LogbackVersion = "1.1.7"
+val ConfigVersion = "1.3.1"
+
 lazy val root = (project in file(".")).
   enablePlugins(GitBranchPrompt, ReleasePlugin).
   settings(
     name := "Logback Hocon",
     organization := "com.github.mwegrz",
+    scalaVersion := ScalaVersion,
     libraryDependencies ++= Seq(
-      "org.slf4j" % "slf4j-api" % "1.7.18",
-      "ch.qos.logback" % "logback-classic" % "1.1.6",
-      "com.typesafe" % "config" % "1.3.0"
+      "org.slf4j" % "slf4j-api" % Slf4jVersion,
+      "ch.qos.logback" % "logback-classic" % LogbackVersion,
+      "com.typesafe" % "config" % ConfigVersion
     ),
     // Publishing
     publishMavenStyle := true,
