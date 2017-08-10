@@ -29,7 +29,7 @@ lazy val root = (project in file(".")).
       setReleaseVersion,
       commitReleaseVersion,
       tagRelease,
-      releaseStepCommandAndRemaining("^ publishSigned"),
+      releaseStepCommandAndRemaining("publishSigned"),
       setNextVersion,
       commitNextVersion,
       releaseStepCommandAndRemaining("sonatypeReleaseAll"),
