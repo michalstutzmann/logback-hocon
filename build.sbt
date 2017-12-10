@@ -1,9 +1,9 @@
 import ReleaseTransformations._
 
-val ScalaVersion = "2.12.3"
+val ScalaVersion = "2.12.4"
 val Slf4jVersion = "1.7.25"
 val LogbackVersion = "1.2.3"
-val ConfigVersion = "1.3.1"
+val ConfigVersion = "1.3.2"
 
 lazy val root = (project in file(".")).
   enablePlugins(ReleasePlugin).
@@ -49,7 +49,7 @@ lazy val root = (project in file(".")).
     publishMavenStyle := true,
     publishArtifact in Test := false,
     pomIncludeRepository := { _ => false },
-    licenses := Seq("Apache License 2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0.html")),
+    licenses := Seq("Apache License, Version 2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0.html")),
     homepage := Some(url("http://github.com/mwegrz/logback-hocon")),
     scmInfo := Some(
       ScmInfo(
