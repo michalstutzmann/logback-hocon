@@ -35,7 +35,6 @@ lazy val root = (project in file(".")).
       releaseStepCommandAndRemaining("sonatypeReleaseAll"),
       pushChanges
     ),
-    useGpg := true,
     releasePublishArtifactsAction := PgpKeys.publishSigned.value,
     // Publish settings
     crossPaths := false,
