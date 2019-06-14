@@ -1,9 +1,9 @@
 import ReleaseTransformations._
 
-val ScalaVersion = "2.12.4"
+val ScalaVersion = "2.12.8"
 val Slf4jVersion = "1.7.25"
 val LogbackVersion = "1.2.3"
-val ConfigVersion = "1.3.2"
+val ConfigVersion = "1.3.4"
 
 lazy val root = (project in file(".")).
   enablePlugins(ReleasePlugin).
