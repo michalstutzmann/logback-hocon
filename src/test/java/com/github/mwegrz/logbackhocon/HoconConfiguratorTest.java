@@ -271,6 +271,24 @@ public class HoconConfiguratorTest {
         assertFalse(ManagementFactory.getPlatformMBeanServer().isRegistered(name));
     }
 
+    @Test
+    public void acceptsUpperCaseBooleans() throws Exception {
+        MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+        ObjectName name = new ObjectName(MBeanUtil.getObjectNameFor("jmx-upper-test", JMXConfigurator.class));
+        try {
+            configure("logback { context-name = jmx-upper-test, jmx-configurator = ON, debug = OFF }");
+            assertTrue(mbs.isRegistered(name));
+            assertFalse(hasStatusListener(OnConsoleStatusListener.class));
+        } finally {
+            if (mbs.isRegistered(name)) mbs.unregisterMBean(name);
+        }
+    }
+
+    @Test(expected = ConfigException.WrongType.class)
+    public void rejectsNonBooleanFlag() {
+        configure("logback.debug = maybe");
+    }
+
     private boolean hasStatusListener(Class<? extends StatusListener> type) {
         for (StatusListener l : context.getStatusManager().getCopyOfStatusListenerList()) {
             if (type.isInstance(l)) return true;

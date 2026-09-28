@@ -30,9 +30,11 @@ import ch.qos.logback.core.status.StatusListener;
 import ch.qos.logback.core.util.FileSize;
 import ch.qos.logback.core.util.StatusListenerConfigHelper;
 import com.typesafe.config.Config;
+import com.typesafe.config.ConfigException;
 import com.typesafe.config.ConfigFactory;
 import com.typesafe.config.ConfigObject;
 import com.typesafe.config.ConfigValue;
+import com.typesafe.config.ConfigValueType;
 import org.slf4j.Logger;
 
 import java.lang.management.ManagementFactory;
@@ -40,6 +42,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -72,7 +75,7 @@ public class HoconConfigurator extends ContextAwareBase implements Configurator 
 
         Config c = config.getConfig("logback");
 
-        if (c.getBoolean("debug")) {
+        if (getBooleanIgnoreCase(c, "debug")) {
             StatusListenerConfigHelper.addOnConsoleListenerInstance(context, new OnConsoleStatusListener());
         }
 
@@ -99,7 +102,7 @@ public class HoconConfigurator extends ContextAwareBase implements Configurator 
             }
         }
 
-        if (c.getBoolean("jmx-configurator")) {
+        if (getBooleanIgnoreCase(c, "jmx-configurator")) {
             registerJmxConfigurator(context);
         }
 
@@ -225,8 +228,8 @@ public class HoconConfigurator extends ContextAwareBase implements Configurator 
                 a.setName(name);
                 if (appenderConfig.hasPath("queue-size")) a.setQueueSize(appenderConfig.getInt("queue-size"));
                 if (appenderConfig.hasPath("discarding-threshold")) a.setDiscardingThreshold(appenderConfig.getInt("discarding-threshold"));
-                if (appenderConfig.hasPath("include-caller-data")) a.setIncludeCallerData(appenderConfig.getBoolean("include-caller-data"));
-                if (appenderConfig.hasPath("never-block")) a.setNeverBlock(appenderConfig.getBoolean("never-block"));
+                if (appenderConfig.hasPath("include-caller-data")) a.setIncludeCallerData(getBooleanIgnoreCase(appenderConfig, "include-caller-data"));
+                if (appenderConfig.hasPath("never-block")) a.setNeverBlock(getBooleanIgnoreCase(appenderConfig, "never-block"));
                 for (String an : appenderConfig.getStringList("appenders")) {
                     a.addAppender(get(an));
                 }
@@ -255,7 +258,7 @@ public class HoconConfigurator extends ContextAwareBase implements Configurator 
                 p.setFileNamePattern(rp.getString("file-name-pattern"));
                 if (rp.hasPath("max-history")) p.setMaxHistory(rp.getInt("max-history"));
                 if (rp.hasPath("total-size-cap")) p.setTotalSizeCap(FileSize.valueOf(rp.getString("total-size-cap")));
-                if (rp.hasPath("clean-history-on-start")) p.setCleanHistoryOnStart(rp.getBoolean("clean-history-on-start"));
+                if (rp.hasPath("clean-history-on-start")) p.setCleanHistoryOnStart(getBooleanIgnoreCase(rp, "clean-history-on-start"));
                 p.start();
                 a.setRollingPolicy(p);
             } else if (policyClass.equals(FIXED_WINDOW_ROLLING_POLICY)) {
@@ -322,8 +325,20 @@ public class HoconConfigurator extends ContextAwareBase implements Configurator 
         }
 
         private static boolean getBoolean(Config config, String path, boolean defaultValue) {
-            return config.hasPath(path) ? config.getBoolean(path) : defaultValue;
+            return config.hasPath(path) ? getBooleanIgnoreCase(config, path) : defaultValue;
         }
+    }
+
+    // Like Config.getBoolean, but case-insensitive, so ON/OFF from older configs still work.
+    private static boolean getBooleanIgnoreCase(Config config, String path) {
+        ConfigValue value = config.getValue(path);
+        if (value.valueType() == ConfigValueType.BOOLEAN) return (Boolean) value.unwrapped();
+        if (value.valueType() == ConfigValueType.STRING) {
+            String s = ((String) value.unwrapped()).trim().toLowerCase(Locale.ROOT);
+            if (s.equals("true") || s.equals("yes") || s.equals("on")) return true;
+            if (s.equals("false") || s.equals("no") || s.equals("off")) return false;
+        }
+        throw new ConfigException.WrongType(value.origin(), path, "boolean", value.valueType().name());
     }
 
     @Override
