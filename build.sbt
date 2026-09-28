@@ -1,67 +1,46 @@
-import ReleaseTransformations._
+val Slf4jVersion = "1.7.36"
+val LogbackVersion = "1.2.13"
+val ConfigVersion = "1.4.9"
+val JunitInterfaceVersion = "0.13.3"
 
-val ScalaVersion = "2.12.8"
-val Slf4jVersion = "1.7.25"
-val LogbackVersion = "1.2.3"
-val ConfigVersion = "1.3.4"
-
-lazy val root = (project in file(".")).
-  enablePlugins(ReleasePlugin).
-  settings(
-    name := "Logback Hocon",
+lazy val root = (project in file("."))
+  .settings(
+    name := "logback-hocon",
     organization := "com.github.mwegrz",
-    scalaVersion := ScalaVersion,
+    versionScheme := Some("early-semver"),
     libraryDependencies ++= Seq(
       "org.slf4j" % "slf4j-api" % Slf4jVersion,
       "ch.qos.logback" % "logback-classic" % LogbackVersion,
-      "com.typesafe" % "config" % ConfigVersion
+      "com.typesafe" % "config" % ConfigVersion,
+      "com.github.sbt" % "junit-interface" % JunitInterfaceVersion % Test
     ),
-    // Release settings
-    releaseTagName := { (version in ThisBuild).value },
-    releaseTagComment := s"Release version ${(version in ThisBuild).value}",
-    releaseCommitMessage := s"Set version to ${(version in ThisBuild).value}",
-    releaseCrossBuild := true, // true if you cross-build the project for multiple Scala versions
-    releaseProcess := Seq[ReleaseStep](
-      checkSnapshotDependencies,
-      inquireVersions,
-      runClean,
-      runTest,
-      setReleaseVersion,
-      commitReleaseVersion,
-      tagRelease,
-      releaseStepCommandAndRemaining("publishSigned"),
-      setNextVersion,
-      commitNextVersion,
-      releaseStepCommandAndRemaining("sonatypeReleaseAll"),
-      pushChanges
-    ),
-    releasePublishArtifactsAction := PgpKeys.publishSigned.value,
-    // Publish settings
+    javacOptions ++= Seq("--release", "8"),
+    // Java-only library: no Scala suffix, no scala-library dependency
     crossPaths := false,
     autoScalaLibrary := false,
-    publishTo := Some(
-      if (isSnapshot.value)
-        Opts.resolver.sonatypeSnapshots
-      else
-        Opts.resolver.sonatypeStaging
-    ),
+    // Publish settings
+    publishTo := localStaging.value,
+    credentials ++= (for {
+      username <- sys.env.get("SONATYPE_CENTRAL_USERNAME")
+      password <- sys.env.get("SONATYPE_CENTRAL_PASSWORD")
+    } yield Credentials("Sonatype Nexus Repository Manager", "central.sonatype.com", username, password)).toSeq,
     publishMavenStyle := true,
-    publishArtifact in Test := false,
+    Test / publishArtifact := false,
     pomIncludeRepository := { _ => false },
-    licenses := Seq("Apache License, Version 2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0.html")),
-    homepage := Some(url("http://github.com/mwegrz/logback-hocon")),
+    licenses := Seq("Apache License, Version 2.0" -> uri("https://www.apache.org/licenses/LICENSE-2.0.html")),
+    homepage := Some(uri("https://github.com/michalstutzmann/logback-hocon")),
     scmInfo := Some(
       ScmInfo(
-        url("https://github.com/mwegrz/logback-hocon.git"),
-        "scm:git@github.com:mwegrz/logback-hocon.git"
+        uri("https://github.com/michalstutzmann/logback-hocon.git"),
+        "scm:git:git@github.com:michalstutzmann/logback-hocon.git"
       )
     ),
     developers := List(
       Developer(
-        id = "mwegrz",
-        name = "Michał Węgrzyn",
+        id = "michalstutzmann",
+        name = "Michal Stutzmann",
         email = null,
-        url = url("http://github.com/mwegrz")
+        url = uri("https://github.com/michalstutzmann")
       )
     )
   )

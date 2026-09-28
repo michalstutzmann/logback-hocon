@@ -1,4 +1,2 @@
-libraryDependencies += "org.slf4j" % "slf4j-nop" % "1.7.25"
-addSbtPlugin("com.github.gseitz" % "sbt-release" % "1.0.11")
-addSbtPlugin("com.jsuereth" % "sbt-pgp" % "1.1.2-1")
-addSbtPlugin("org.xerial.sbt" % "sbt-sonatype" % "2.5")
+libraryDependencies += "org.slf4j" % "slf4j-nop" % "1.7.36"
+addSbtPlugin("com.github.sbt" % "sbt-pgp" % "2.3.2")

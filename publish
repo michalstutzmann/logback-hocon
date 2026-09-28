@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+is_detached_head() {
+    ! git symbolic-ref --quiet HEAD >/dev/null
+}
+
+create_github_release() {
+    local -r version="$1"
+    local -r release_tag="$2"
+
+    if gh release view "$release_tag" >/dev/null 2>&1; then
+        printf 'GitHub release %s already exists, skipping\n' "$release_tag" 1>&2
+        return 0
+    fi
+
+    gh release create "$release_tag" \
+        --title "$version" \
+        --notes-from-tag || return 1
+}
+
+publish() {
+    local -r version="$1"
+
+    sbt "set version := \"$version\"; testFull; publishSigned; sonaRelease" || return 1
+}
+
+main() {
+    if ! command -v gh >/dev/null 2>&1; then
+        printf 'error: gh is not installed or not on PATH\n' 1>&2
+        return 1
+    elif ! gh auth status >/dev/null 2>&1; then
+        printf 'error: gh is not authenticated (run: gh auth login)\n' 1>&2
+        return 2
+    fi
+
+    local version
+    version="$(git-semver-release version)" || return 3
+
+    local release_tag
+    release_tag="$(git-semver-release release-tag)" || return 4
+
+    if is_detached_head && [[ -n $release_tag ]]; then
+        publish "$version" || return 5
+        create_github_release "$version" "$release_tag" || return 6
+    else
+        sbt testFull || return 7
+    fi
+}
+
+main "$@"

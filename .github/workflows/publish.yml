@@ -1,0 +1,43 @@
+---
+name: Publish
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - '**'
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ github.ref }}
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: sbt
+      - name: Set up sbt
+        uses: sbt/setup-sbt@v1
+        with:
+          sbt-runner-version: 2.0.9
+      - name: Set up Git SemVer Release
+        uses: michalstutzmann/setup-git-semver-release@v2.0.1
+      - name: Import PGP key
+        env:
+          PGP_SECRET: ${{ secrets.PGP_SECRET }}
+        run: echo "$PGP_SECRET" | base64 --decode | gpg --batch --import
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
+          SONATYPE_CENTRAL_USERNAME: ${{ secrets.SONATYPE_CENTRAL_USERNAME }}
+          SONATYPE_CENTRAL_PASSWORD: ${{ secrets.SONATYPE_CENTRAL_PASSWORD }}
+        run: ./publish
