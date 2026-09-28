@@ -1,26 +1,63 @@
 package com.github.mwegrz.logbackhocon;
 
+import ch.qos.logback.classic.AsyncAppender;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
+import ch.qos.logback.classic.jmx.JMXConfigurator;
+import ch.qos.logback.classic.jmx.MBeanUtil;
 import ch.qos.logback.classic.spi.Configurator;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.*;
+import ch.qos.logback.core.Appender;
+import ch.qos.logback.core.ConsoleAppender;
+import ch.qos.logback.core.Context;
+import ch.qos.logback.core.CoreConstants;
+import ch.qos.logback.core.FileAppender;
+import ch.qos.logback.core.Layout;
+import ch.qos.logback.core.OutputStreamAppender;
+import ch.qos.logback.core.encoder.Encoder;
 import ch.qos.logback.core.encoder.LayoutWrappingEncoder;
+import ch.qos.logback.core.rolling.FixedWindowRollingPolicy;
 import ch.qos.logback.core.rolling.RollingFileAppender;
-import ch.qos.logback.classic.AsyncAppender;
-import ch.qos.logback.core.status.Status;
+import ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy;
+import ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy;
+import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
+import ch.qos.logback.core.spi.ContextAware;
+import ch.qos.logback.core.spi.ContextAwareBase;
+import ch.qos.logback.core.spi.LifeCycle;
+import ch.qos.logback.core.status.OnConsoleStatusListener;
+import ch.qos.logback.core.status.StatusListener;
+import ch.qos.logback.core.util.FileSize;
+import ch.qos.logback.core.util.StatusListenerConfigHelper;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import com.typesafe.config.ConfigObject;
 import com.typesafe.config.ConfigValue;
 import org.slf4j.Logger;
+
+import java.lang.management.ManagementFactory;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
-public class HoconConfigurator implements Configurator {
-    private LoggerContext context = null;
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
+
+public class HoconConfigurator extends ContextAwareBase implements Configurator {
+    private static final String CONSOLE_APPENDER = "ch.qos.logback.core.ConsoleAppender";
+    private static final String FILE_APPENDER = "ch.qos.logback.core.FileAppender";
+    private static final String ROLLING_FILE_APPENDER = "ch.qos.logback.core.rolling.RollingFileAppender";
+    private static final String ASYNC_APPENDER = "ch.qos.logback.classic.AsyncAppender";
+    private static final List<String> SUPPORTED_APPENDERS =
+            Arrays.asList(CONSOLE_APPENDER, FILE_APPENDER, ROLLING_FILE_APPENDER, ASYNC_APPENDER);
+
+    private static final String TIME_BASED_ROLLING_POLICY = "ch.qos.logback.core.rolling.TimeBasedRollingPolicy";
+    private static final String SIZE_AND_TIME_BASED_ROLLING_POLICY = "ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy";
+    private static final String FIXED_WINDOW_ROLLING_POLICY = "ch.qos.logback.core.rolling.FixedWindowRollingPolicy";
+    private static final String SIZE_BASED_TRIGGERING_POLICY = "ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy";
 
     @Override
     public void configure(LoggerContext context) {
@@ -29,16 +66,18 @@ public class HoconConfigurator implements Configurator {
     }
 
     void configure(LoggerContext context, Config config) {
+        if (getContext() == null) setContext(context);
+
         config.checkValid(ConfigFactory.defaultReference(), "logback");
 
         Config c = config.getConfig("logback");
 
-        if (c.hasPath("status-listener")) {
-            //context.addListener();
+        if (c.getBoolean("debug")) {
+            StatusListenerConfigHelper.addOnConsoleListenerInstance(context, new OnConsoleStatusListener());
         }
 
-        if (c.hasPath("debug")) {
-            //context.
+        if (c.hasPath("status-listener")) {
+            addStatusListener(context, c.getString("status-listener"));
         }
 
         if (c.hasPath("context-name")) {
@@ -46,8 +85,8 @@ public class HoconConfigurator implements Configurator {
         }
 
         if (c.hasPath("conversion-rules")) {
-            Map<String, String> registry = null;
-                    //(Map<String, String>) this.context.getObject(CoreConstants.PATTERN_RULE_REGISTRY);
+            @SuppressWarnings("unchecked")
+            Map<String, String> registry = (Map<String, String>) context.getObject(CoreConstants.PATTERN_RULE_REGISTRY);
             if (registry == null) {
                 registry = new HashMap<>();
                 context.putObject(CoreConstants.PATTERN_RULE_REGISTRY, registry);
@@ -60,84 +99,13 @@ public class HoconConfigurator implements Configurator {
             }
         }
 
-        //ConfigurationDelegate delegate = new ConfigurationDelegate();
-        //delegate.setContext(context);
-        //if (c.getBoolean("jmx-configurator")) delegate.jmxConfigurator();
+        if (c.getBoolean("jmx-configurator")) {
+            registerJmxConfigurator(context);
+        }
 
-        Map<String, Appender<ILoggingEvent>> appenders = new HashMap<>();
-        for (Map.Entry<String, ConfigValue> e : c.getConfig("appenders").root().entrySet()) {
-            String name = e.getKey();
-            Config appenderConfig = ((ConfigObject) e.getValue()).toConfig();
-            String appenderClass = appenderConfig.getString("class");
-
-            if(appenderClass.equals("ch.qos.logback.core.ConsoleAppender")) {
-                ConsoleAppender<ILoggingEvent> a = new ConsoleAppender<ILoggingEvent>();
-                if(appenderConfig.hasPath("encoder.pattern")) {
-                    PatternLayoutEncoder encoder = createPatternLayoutEncoder(context, appenderConfig.getString("encoder.pattern"));
-                    a.setEncoder(encoder);
-                } else if (appenderConfig.hasPath("encoder.class")) {
-                    String encoderClass = appenderConfig.getString("encoder.class");
-                    try {
-                        LayoutWrappingEncoder<ILoggingEvent> encoder = (LayoutWrappingEncoder<ILoggingEvent>) Class.forName(encoderClass).newInstance();
-                        if(appenderConfig.hasPath("encoder.layout.class")) {
-                            String lc = appenderConfig.getString("encoder.layout.class");
-                            try {
-                                Layout<ILoggingEvent> layout = (Layout<ILoggingEvent>) Class.forName(lc).newInstance();
-                                layout.setContext(context);
-                                encoder.setLayout(layout);
-                            } catch (Exception ex) {
-                                throw new IllegalArgumentException(ex);
-                            }
-                        }
-                        encoder.setContext(context);
-                        a.setEncoder(encoder);
-                    } catch (Exception ex) {
-                        throw new IllegalArgumentException(ex);
-                    }
-                }
-
-                a.setWithJansi(appenderConfig.getBoolean("with-jansi"));
-                a.setName(name);
-                a.setContext(context);
-                a.start();
-                appenders.put(name, a);
-            } else if (appenderClass.equals("ch.qos.logback.core.FileAppender")) {
-                FileAppender<ILoggingEvent> a = new FileAppender<ILoggingEvent>();
-                a.setName(name);
-                if(appenderConfig.hasPath("encoder.pattern")) {
-                    PatternLayoutEncoder encoder = createPatternLayoutEncoder(context, appenderConfig.getString("encoder.pattern"));
-                    a.setEncoder(encoder);
-                }
-                a.setContext(context);
-                a.setFile(appenderConfig.getString("file"));
-                a.setAppend(appenderConfig.getBoolean("append"));
-                a.start();
-                appenders.put(name, a);
-            } else if (appenderClass.equals("ch.qos.logback.core.RollingFileAppender")) {
-                RollingFileAppender<ILoggingEvent> a = new RollingFileAppender<ILoggingEvent>();
-                a.setName(name);
-                if(appenderConfig.hasPath("encoder.pattern")) {
-                    PatternLayoutEncoder encoder = createPatternLayoutEncoder(context, appenderConfig.getString("encoder.pattern"));
-                    a.setEncoder(encoder);
-                }
-                a.setContext(context);
-                a.setFile(appenderConfig.getString("file"));
-                a.setAppend(appenderConfig.getBoolean("append"));
-
-                a.start();
-                appenders.put(name, a);
-            } else if (appenderClass.equals("ch.qos.logback.classic.AsyncAppender")) {
-                List<String> appenderNames = appenderConfig.getStringList("appenders");
-                AsyncAppender a = new AsyncAppender();
-                for (String an : appenderNames) {
-                    a.addAppender(appenders.get(an));
-                }
-                a.setContext(context);
-                a.start();
-                appenders.put(name, a);
-            } else {
-                throw new UnsupportedOperationException("Unsupported appender: " + appenderClass + ". Supported appenders: ch.qos.logback.core.ConsoleAppender and ch.qos.logback.core.FileAppender");
-            }
+        Appenders appenders = new Appenders(context, c.getConfig("appenders"));
+        for (String name : c.getConfig("appenders").root().keySet()) {
+            appenders.get(name);
         }
 
         for (Map.Entry<String, ConfigValue> e : c.getConfig("loggers").root().entrySet()) {
@@ -162,59 +130,207 @@ public class HoconConfigurator implements Configurator {
         }
     }
 
-    private PatternLayoutEncoder createPatternLayoutEncoder(Context context, String encoderPattern) {
-        PatternLayoutEncoder encoder = new PatternLayoutEncoder();
-        encoder.setPattern(encoderPattern);
-        encoder.setContext(context);
-        encoder.start();
-        return encoder;
+    private void addStatusListener(LoggerContext context, String className) {
+        StatusListener listener;
+        try {
+            listener = (StatusListener) Class.forName(className).getDeclaredConstructor().newInstance();
+        } catch (Exception ex) {
+            throw new IllegalArgumentException("Cannot instantiate status listener " + className, ex);
+        }
+        if (listener instanceof ContextAware) ((ContextAware) listener).setContext(context);
+        context.getStatusManager().add(listener);
+        if (listener instanceof LifeCycle) ((LifeCycle) listener).start();
+    }
+
+    private void registerJmxConfigurator(LoggerContext context) {
+        MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+        String objectNameAsString = MBeanUtil.getObjectNameFor(context.getName(), JMXConfigurator.class);
+        ObjectName objectName = MBeanUtil.string2ObjectName(context, this, objectNameAsString);
+        if (objectName != null && !MBeanUtil.isRegistered(mbs, objectName)) {
+            JMXConfigurator jmxConfigurator = new JMXConfigurator(context, mbs, objectName);
+            try {
+                mbs.registerMBean(jmxConfigurator, objectName);
+            } catch (Exception ex) {
+                addError("Failed to register JMXConfigurator " + objectNameAsString, ex);
+            }
+        }
+    }
+
+    /**
+     * Builds appenders on first reference, so an appender may refer to others (e.g. AsyncAppender)
+     * regardless of the order in which they are defined.
+     */
+    private static final class Appenders {
+        private final LoggerContext context;
+        private final Config config;
+        private final Map<String, Appender<ILoggingEvent>> built = new HashMap<>();
+        private final Set<String> inProgress = new HashSet<>();
+
+        Appenders(LoggerContext context, Config config) {
+            this.context = context;
+            this.config = config;
+        }
+
+        Appender<ILoggingEvent> get(String name) {
+            Appender<ILoggingEvent> appender = built.get(name);
+            if (appender != null) return appender;
+
+            if (!config.root().containsKey(name)) {
+                throw new IllegalArgumentException("Unknown appender: " + name);
+            }
+            if (!inProgress.add(name)) {
+                throw new IllegalArgumentException("Circular appender reference: " + name);
+            }
+            appender = create(name, ((ConfigObject) config.root().get(name)).toConfig());
+            inProgress.remove(name);
+            built.put(name, appender);
+            return appender;
+        }
+
+        private Appender<ILoggingEvent> create(String name, Config appenderConfig) {
+            String appenderClass = appenderConfig.getString("class");
+
+            if (appenderClass.equals(CONSOLE_APPENDER)) {
+                ConsoleAppender<ILoggingEvent> a = new ConsoleAppender<>();
+                a.setContext(context);
+                a.setName(name);
+                setEncoder(a, appenderConfig);
+                a.setWithJansi(getBoolean(appenderConfig, "with-jansi", false));
+                a.start();
+                return a;
+            } else if (appenderClass.equals(FILE_APPENDER)) {
+                FileAppender<ILoggingEvent> a = new FileAppender<>();
+                a.setContext(context);
+                a.setName(name);
+                setEncoder(a, appenderConfig);
+                a.setFile(appenderConfig.getString("file"));
+                a.setAppend(getBoolean(appenderConfig, "append", true));
+                a.start();
+                return a;
+            } else if (appenderClass.equals(ROLLING_FILE_APPENDER)) {
+                RollingFileAppender<ILoggingEvent> a = new RollingFileAppender<>();
+                a.setContext(context);
+                a.setName(name);
+                setEncoder(a, appenderConfig);
+                if (appenderConfig.hasPath("file")) {
+                    a.setFile(appenderConfig.getString("file"));
+                }
+                a.setAppend(getBoolean(appenderConfig, "append", true));
+                setRollingPolicy(a, appenderConfig);
+                a.start();
+                return a;
+            } else if (appenderClass.equals(ASYNC_APPENDER)) {
+                AsyncAppender a = new AsyncAppender();
+                a.setContext(context);
+                a.setName(name);
+                if (appenderConfig.hasPath("queue-size")) a.setQueueSize(appenderConfig.getInt("queue-size"));
+                if (appenderConfig.hasPath("discarding-threshold")) a.setDiscardingThreshold(appenderConfig.getInt("discarding-threshold"));
+                if (appenderConfig.hasPath("include-caller-data")) a.setIncludeCallerData(appenderConfig.getBoolean("include-caller-data"));
+                if (appenderConfig.hasPath("never-block")) a.setNeverBlock(appenderConfig.getBoolean("never-block"));
+                for (String an : appenderConfig.getStringList("appenders")) {
+                    a.addAppender(get(an));
+                }
+                a.start();
+                return a;
+            } else {
+                throw new UnsupportedOperationException("Unsupported appender: " + appenderClass + ". Supported appenders: " + String.join(", ", SUPPORTED_APPENDERS));
+            }
+        }
+
+        private void setRollingPolicy(RollingFileAppender<ILoggingEvent> a, Config appenderConfig) {
+            Config rp = appenderConfig.getConfig("rolling-policy");
+            String policyClass = rp.getString("class");
+
+            if (policyClass.equals(TIME_BASED_ROLLING_POLICY) || policyClass.equals(SIZE_AND_TIME_BASED_ROLLING_POLICY)) {
+                TimeBasedRollingPolicy<ILoggingEvent> p;
+                if (policyClass.equals(SIZE_AND_TIME_BASED_ROLLING_POLICY)) {
+                    SizeAndTimeBasedRollingPolicy<ILoggingEvent> sp = new SizeAndTimeBasedRollingPolicy<>();
+                    sp.setMaxFileSize(FileSize.valueOf(rp.getString("max-file-size")));
+                    p = sp;
+                } else {
+                    p = new TimeBasedRollingPolicy<>();
+                }
+                p.setContext(context);
+                p.setParent(a);
+                p.setFileNamePattern(rp.getString("file-name-pattern"));
+                if (rp.hasPath("max-history")) p.setMaxHistory(rp.getInt("max-history"));
+                if (rp.hasPath("total-size-cap")) p.setTotalSizeCap(FileSize.valueOf(rp.getString("total-size-cap")));
+                if (rp.hasPath("clean-history-on-start")) p.setCleanHistoryOnStart(rp.getBoolean("clean-history-on-start"));
+                p.start();
+                a.setRollingPolicy(p);
+            } else if (policyClass.equals(FIXED_WINDOW_ROLLING_POLICY)) {
+                FixedWindowRollingPolicy p = new FixedWindowRollingPolicy();
+                p.setContext(context);
+                p.setParent(a);
+                p.setFileNamePattern(rp.getString("file-name-pattern"));
+                if (rp.hasPath("min-index")) p.setMinIndex(rp.getInt("min-index"));
+                if (rp.hasPath("max-index")) p.setMaxIndex(rp.getInt("max-index"));
+                p.start();
+                a.setRollingPolicy(p);
+
+                Config tp = appenderConfig.getConfig("triggering-policy");
+                String triggeringClass = tp.getString("class");
+                if (!triggeringClass.equals(SIZE_BASED_TRIGGERING_POLICY)) {
+                    throw new UnsupportedOperationException("Unsupported triggering policy: " + triggeringClass + ". Supported triggering policies: " + SIZE_BASED_TRIGGERING_POLICY);
+                }
+                SizeBasedTriggeringPolicy<ILoggingEvent> t = new SizeBasedTriggeringPolicy<>();
+                t.setContext(context);
+                t.setMaxFileSize(FileSize.valueOf(tp.getString("max-file-size")));
+                t.start();
+                a.setTriggeringPolicy(t);
+            } else {
+                throw new UnsupportedOperationException("Unsupported rolling policy: " + policyClass + ". Supported rolling policies: " + String.join(", ", TIME_BASED_ROLLING_POLICY, SIZE_AND_TIME_BASED_ROLLING_POLICY, FIXED_WINDOW_ROLLING_POLICY));
+            }
+        }
+
+        private void setEncoder(OutputStreamAppender<ILoggingEvent> a, Config appenderConfig) {
+            Encoder<ILoggingEvent> encoder = createEncoder(appenderConfig);
+            if (encoder != null) a.setEncoder(encoder);
+        }
+
+        @SuppressWarnings("unchecked")
+        private Encoder<ILoggingEvent> createEncoder(Config appenderConfig) {
+            if (appenderConfig.hasPath("encoder.pattern")) {
+                PatternLayoutEncoder encoder = new PatternLayoutEncoder();
+                encoder.setPattern(appenderConfig.getString("encoder.pattern"));
+                encoder.setContext(context);
+                encoder.start();
+                return encoder;
+            } else if (appenderConfig.hasPath("encoder.class")) {
+                LayoutWrappingEncoder<ILoggingEvent> encoder = newInstance(appenderConfig.getString("encoder.class"));
+                encoder.setContext(context);
+                if (appenderConfig.hasPath("encoder.layout.class")) {
+                    Layout<ILoggingEvent> layout = newInstance(appenderConfig.getString("encoder.layout.class"));
+                    layout.setContext(context);
+                    layout.start();
+                    encoder.setLayout(layout);
+                }
+                encoder.start();
+                return encoder;
+            } else {
+                return null;
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        private static <T> T newInstance(String className) {
+            try {
+                return (T) Class.forName(className).getDeclaredConstructor().newInstance();
+            } catch (Exception ex) {
+                throw new IllegalArgumentException("Cannot instantiate " + className, ex);
+            }
+        }
+
+        private static boolean getBoolean(Config config, String path, boolean defaultValue) {
+            return config.hasPath(path) ? config.getBoolean(path) : defaultValue;
+        }
     }
 
     @Override
     public void setContext(Context context) {
-        if(context == null) throw new IllegalArgumentException("Context is null");
-        if(!(context instanceof LoggerContext))
+        if (context == null) throw new IllegalArgumentException("Context is null");
+        if (!(context instanceof LoggerContext))
             throw new IllegalArgumentException("Context is not of type LoggerContext");
-        this.context = (LoggerContext) context;
-    }
-
-    @Override
-    public Context getContext() {
-        return context;
-    }
-
-    @Override
-    public void addStatus(Status status) {
-      throw new UnsupportedOperationException("Not supported");
-    }
-
-    @Override
-    public void addInfo(String msg) {
-        throw new UnsupportedOperationException("Not supported");
-    }
-
-    @Override
-    public void addInfo(String msg, Throwable ex) {
-        throw new UnsupportedOperationException("Not supported");
-    }
-
-    @Override
-    public void addWarn(String msg) {
-        throw new UnsupportedOperationException("Not supported");
-    }
-
-    @Override
-    public void addWarn(String msg, Throwable ex) {
-        throw new UnsupportedOperationException("Not supported");
-    }
-
-    @Override
-    public void addError(String msg) {
-        throw new UnsupportedOperationException("Not supported");
-    }
-
-    @Override
-    public void addError(String msg, Throwable ex) {
-        throw new UnsupportedOperationException("Not supported");
+        super.setContext(context);
     }
 }
